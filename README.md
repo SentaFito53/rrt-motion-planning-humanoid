@@ -1,64 +1,79 @@
-# motplan — RRT Motion Planning Test (BarelangFC)
+# RRT Motion Planning Test (BarelangFC)
 
-## Tujuan
+## Objective
 
-Repository/modul ini merupakan **mini project pengujian (proof of concept)** implementasi algoritma **RRT (Rapidly-exploring Random Tree)** untuk motion planning, yang diintegrasikan ke dalam framework kontrol robot humanoid sepak bola **BarelangFC** (berbasis ROS2 dan BehaviorTree.CPP).
+This repository/module is a **mini proof-of-concept project** for testing the implementation of the **RRT (Rapidly-exploring Random Tree)** algorithm for motion planning, integrated into the **BarelangFC** humanoid soccer robot control framework (based on ROS2 and BehaviorTree.CPP).
 
-Tujuan utamanya **bukan** untuk deployment fitur produksi, melainkan untuk:
-- Menguji kelayakan algoritma RRT dalam menghasilkan jalur bebas obstacle pada skala lapangan robot soccer.
-- Memverifikasi integrasi algoritma path planning dengan sistem kontrol gerak (motion primitive) dan odometri robot yang sudah ada.
-- Menjadi dasar eksperimen lanjutan sebelum algoritma sejenis dipakai untuk kebutuhan nyata seperti penghindaran robot lawan/rekan tim saat pertandingan.
+Its primary purpose is **not** production deployment, but rather to:
 
-## Struktur Komponen
+- Evaluate the feasibility of the RRT algorithm in generating obstacle-free paths within a robot soccer field environment.
+- Verify the integration of the path planning algorithm with the existing robot motion control (motion primitives) and odometry system.
+- Serve as a foundation for further experiments before applying similar algorithms to real-world tasks, such as avoiding opponent or teammate robots during matches.
 
-| File | Peran |
+---
+
+## Component Structure
+
+| File | Role |
 |---|---|
-| `rrt_planner.hpp` | Implementasi murni algoritma RRT (tidak bergantung ROS) |
-| `main.cpp` (node `main_strategy`) | Integrasi RRT ke behavior tree robot, lewat node `testGrid` |
-| `rrt_monitor.py` | Node ROS2 terpisah untuk visualisasi jalur, obstacle, dan posisi robot di peta |
+| `rrt_planner.hpp` | Pure implementation of the RRT algorithm (independent of ROS) |
+| `main.cpp` (node `main_strategy`) | Integrates the RRT planner into the robot Behavior Tree through the `testGrid` node |
+| `rrt_monitor.py` | Separate ROS2 node for visualizing the generated path, obstacles, and robot position on the map |
 
-## Fungsi `NodeStatus testGrid()`
+---
 
-`testGrid()` adalah node **Behavior Tree** yang berfungsi sebagai *state machine* pengendali siklus motion planning RRT, dengan tiga status (`PlanState`):
+## `NodeStatus testGrid()` Function
 
-1. **`IDLE`** — Dijalankan sekali di awal. Mendefinisikan titik start `(0,0)`, titik goal `(300,0)`, dan obstacle lokal secara manual (posisi `x, y, radius` dalam cm). Memanggil `RRTPlanner::plan()` untuk menghasilkan jalur, lalu `smoothPath()` untuk menghaluskannya. Jika jalur ditemukan, status berpindah ke `EXECUTING`; jika gagal, node mengembalikan `NodeStatus::FAILURE`.
-2. **`EXECUTING`** — Mengeksekusi jalur waypoint demi waypoint menggunakan primitif gerak `new_out_pos_norotate()` (closed-loop walk-to-point berbasis feedback odometri, tanpa memaksa align yaw robot di tiap waypoint). Setelah satu waypoint tercapai (`doneMoved == true`), index waypoint bertambah dan lanjut ke waypoint berikutnya.
-3. **`DONE`** — Dipanggil setelah seluruh waypoint tercapai. Robot dihentikan (`motion("0")`), lalu status dan obstacle di-reset ke kondisi awal (`IDLE`, `localObstacles.clear()`) agar node dapat diuji ulang dari nol, dan mengembalikan `NodeStatus::SUCCESS`.
+`testGrid()` is a **Behavior Tree** node that acts as the state machine controlling the RRT motion planning cycle, consisting of three states (`PlanState`):
 
-Selama proses `IDLE` dan `EXECUTING` berlangsung, node selalu mengembalikan `NodeStatus::FAILURE` agar Behavior Tree tetap menganggap node ini "berjalan" (running) sampai benar-benar mencapai `DONE`. Di setiap tick, `publishRRTVisualization()` dipanggil untuk mempublikasikan jalur dan obstacle terbaru ke topic ROS2, sehingga proses planning dapat dipantau secara real-time.
+1. **`IDLE`** — Executed once at the beginning. It defines the start point `(0,0)`, the goal point `(300,0)`, and a set of manually specified local obstacles (defined by `x`, `y`, and `radius` in centimeters). It then calls `RRTPlanner::plan()` to generate a path, followed by `smoothPath()` to simplify the resulting path. If a valid path is found, the state transitions to `EXECUTING`; otherwise, the node returns `NodeStatus::FAILURE`.
 
-## Algoritma RRT yang Digunakan
+2. **`EXECUTING`** — Executes the generated path one waypoint at a time using the `new_out_pos_norotate()` motion primitive (a closed-loop walk-to-point controller based on odometry feedback without forcing the robot to align its yaw at every waypoint). Once a waypoint is reached (`doneMoved == true`), the waypoint index is incremented, and the robot proceeds to the next waypoint.
 
-Implementasi RRT (`rrt_planner.hpp`) berupa **RRT dasar dengan goal bias**, terdiri dari:
+3. **`DONE`** — Executed after all waypoints have been reached. The robot is stopped (`motion("0")`), and the planning state and obstacle list are reset to their initial conditions (`IDLE`, `localObstacles.clear()`), allowing the node to be tested again from scratch. The node then returns `NodeStatus::SUCCESS`.
 
-- **`RRTPlanner::plan(start, goal, obstacles)`** — Fungsi utama. Menumbuhkan pohon eksplorasi dari titik start dengan sampling acak (10% kemungkinan langsung sampling ke goal untuk mempercepat konvergensi), lalu melakukan *steering* menuju titik sampel sejauh maksimal `stepSize` (20 cm). Setiap segmen baru diperiksa terhadap tabrakan obstacle (`segmentCircleIntersect`) sebelum ditambahkan ke pohon. Berhenti begitu satu node cukup dekat dengan goal (`goalTolerance` 15 cm) dan segmen ke goal bebas obstacle.
-- **`smoothPath(path, obstacles)`** — Fungsi pasca-proses opsional yang menghapus waypoint perantara yang bisa "dilompati" langsung tanpa menabrak obstacle, menghasilkan jalur lebih pendek dan tidak zig-zag.
-- **Obstacle** direpresentasikan sederhana sebagai lingkaran `{x, y, radius}`, dengan radius mencakup ukuran fisik robot lawan ditambah margin keamanan.
+During both the `IDLE` and `EXECUTING` states, the node continuously returns `NodeStatus::FAILURE` so that the Behavior Tree treats it as still running until it finally reaches the `DONE` state. At every tick, `publishRRTVisualization()` is called to publish the latest path and obstacle information to ROS2 topics, enabling real-time monitoring of the planning process.
 
-## Integrasi dengan Framework ROS2
+---
 
-```
-main_strategy (C++, node BehaviorTree.CPP)
+## Implemented RRT Algorithm
+
+The implementation in `rrt_planner.hpp` is a **basic RRT with goal bias**, consisting of the following components:
+
+- **`RRTPlanner::plan(start, goal, obstacles)`** — The main planning function. It grows the exploration tree from the start point using random sampling, with a 10% probability of directly sampling the goal to accelerate convergence. The planner then performs *steering* toward the sampled point with a maximum distance of `stepSize` (20 cm). Each newly generated segment is checked for obstacle collisions using `segmentCircleIntersect()` before being added to the tree. The algorithm terminates once a node is sufficiently close to the goal (`goalTolerance` = 15 cm) and the final segment to the goal is collision-free.
+
+- **`smoothPath(path, obstacles)`** — An optional post-processing function that removes unnecessary intermediate waypoints whenever a direct connection between two waypoints does not intersect any obstacle, resulting in a shorter and smoother path with fewer zig-zag movements.
+
+- **Obstacles** are represented as simple circles `{x, y, radius}`, where the radius includes both the physical size of the opponent robot and an additional safety margin.
+
+---
+
+## Integration with the ROS2 Framework
+
+```text
+main_strategy (C++, BehaviorTree.CPP node)
     │
     ├─ testGrid() [state machine IDLE → EXECUTING → DONE]
-    │     ├─ RRTPlanner::plan()      → hasil: vector<Point2D> rrtPath
-    │     └─ new_out_pos_norotate()  → closed-loop walk-to-point per waypoint
+    │     ├─ RRTPlanner::plan()      → output: vector<Point2D> rrtPath
+    │     └─ new_out_pos_norotate()  → closed-loop walk-to-point for each waypoint
     │
     ├─ publish topic 'rrt_path'       (nav_msgs/Path)
-    ├─ publish topic 'rrt_obstacles'  (std_msgs/Float32MultiArray, format flat [x,y,r,...])
-    └─ publish topic 'pose'           (nav_msgs/Odometry, dari sistem odometri robot)
+    ├─ publish topic 'rrt_obstacles'  (std_msgs/Float32MultiArray, flat format [x,y,r,...])
+    └─ publish topic 'pose'           (nav_msgs/Odometry, from the robot odometry system)
               │
               ▼
-rrt_monitor.py (Python, node terpisah)
-    ├─ subscribe 'pose', 'rrt_path', 'rrt_obstacles'
-    └─ render peta lapangan + jalur + obstacle + posisi robot via OpenCV
+rrt_monitor.py (Python, separate node)
+    ├─ subscribe to 'pose', 'rrt_path', and 'rrt_obstacles'
+    └─ render the field map, path, obstacles, and robot position using OpenCV
 ```
 
-- **`rrt_planner.hpp`** murni C++ standar tanpa dependency ROS, sehingga logika algoritma dapat diuji dan dikembangkan secara independen dari sistem robot.
-- **`main_strategy`** menjembatani hasil planning dengan sistem gerak robot yang sudah ada, memanfaatkan data odometri (`robotPos_X/Y`, `msg_yaw`) sebagai feedback posisi closed-loop.
-- **`rrt_monitor`** berjalan sebagai node ROS2 terpisah (dapat dijalankan di komputer lain dalam jaringan ROS2 yang sama), berguna untuk debugging visual tanpa membebani komputasi node strategi utama robot.
-- Robot dapat memiliki namespace (`/robot_<id>/...`) sehingga `rrt_monitor` mendukung parameter `robot_id` untuk memilih robot mana yang ingin dipantau.
+- **`rrt_planner.hpp`** is written in standard C++ with no ROS dependencies, allowing the planning algorithm to be developed and tested independently of the robot control framework.
+- **`main_strategy`** bridges the planning output with the existing robot motion control system by using odometry feedback (`robotPos_X/Y`, `msg_yaw`) for closed-loop position control.
+- **`rrt_monitor`** runs as a separate ROS2 node (and may even be executed on another computer within the same ROS2 network), providing visual debugging without increasing the computational load of the robot's main strategy node.
+- The robot may operate under a namespace (e.g., `/robot_<id>/...`), and `rrt_monitor` supports the `robot_id` parameter to select which robot should be monitored.
 
-## Status Project
+---
 
-Mini project ini masih bersifat **eksperimental/testing**, dengan obstacle yang didefinisikan secara manual (hardcoded) di dalam `testGrid()`. Pengembangan lanjutan yang mungkin diperlukan antara lain: pengambilan posisi obstacle secara otomatis dari deteksi visual atau data koordinasi antar robot, serta pengujian pada skenario lapangan yang lebih kompleks.
+## Project Status
+
+This mini project is currently **experimental/testing**. Obstacles are manually defined (hardcoded) inside `testGrid()`. Future development may include automatically obtaining obstacle positions from the vision system or inter-robot coordinate sharing, as well as evaluating the planner in more complex game scenarios with dynamic obstacles and realistic field conditions.
