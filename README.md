@@ -74,6 +74,13 @@ rrt_monitor.py (Python, separate node)
 
 ---
 
+## 🎥 Demo Video
+
+Watch the RRT motion planning demonstration on YouTube:
+
+[![RRT Motion Planning Demo](https://img.youtube.com/vi/UpEtRjmQ9GM/maxresdefault.jpg)](https://youtu.be/UpEtRjmQ9GM)
+
+> Click the image above to watch the full demonstration.
 ## Project Status
 
 This mini project is currently **experimental/testing**. Obstacles are manually defined (hardcoded) inside `testGrid()`. Future development may include automatically obtaining obstacle positions from the vision system or inter-robot coordinate sharing, as well as evaluating the planner in more complex game scenarios with dynamic obstacles and realistic field conditions.
