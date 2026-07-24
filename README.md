@@ -74,7 +74,7 @@ rrt_monitor.py (Python, separate node)
 
 ---
 
-## 🎥 Demo Video
+## Demo Video
 
 Watch the RRT motion planning demonstration on YouTube:
 
